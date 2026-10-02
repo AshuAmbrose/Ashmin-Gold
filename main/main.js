@@ -56,6 +56,10 @@ if (process.platform === 'win32') {
   })()
 }
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId(app.name)
+}
+
 if (isDevelopmentMode) {
   app.setPath('userData', app.getPath('userData') + '-development')
 }
