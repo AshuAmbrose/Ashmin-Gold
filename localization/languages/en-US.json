@@ -314,6 +314,30 @@
     "secretKey": "Secret key",
     "openExternalApp": "Open in \\\"%s\\\"?", // %s is the name of an app
     "clickToCopy": "Click to copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    /* Permission requests */
+    "permissionNotifications": "%s wants to show notifications",
+    "permissionMediaBoth": "%s wants to use your camera and microphone",
+    "permissionMediaCamera": "%s wants to use your camera",
+    "permissionMediaMicrophone": "%s wants to use your microphone",
+    "permissionDisplayCapture": "%s wants to share your screen or a window",
+    "permissionPointerLock": "%s wants to lock your mouse cursor",
+    "permissionActionAllow": "Allow",
+    "permissionActionAllowAlways": "Always allow",
+    "permissionActionAllowOnce": "Allow this visit",
+    "permissionActionShare": "Share",
+    "permissionActionBlock": "Block",
+    "permissionActionDismiss": "Dismiss",
+    /* Site permissions settings */
+    "settingsSitePermissionsHeading": "Site Permissions",
+    "settingsSitePermissionsEmpty": "No site permissions have been configured yet.",
+    "settingsPermissionNotifications": "Notifications",
+    "settingsPermissionMicrophone": "Microphone",
+    "settingsPermissionCamera": "Camera",
+    "settingsPermissionPointerLock": "Pointer Lock",
+    "settingsPermissionAllow": "Allowed",
+    "settingsPermissionBlock": "Blocked",
+    "settingsPermissionAsk": "Ask (default)",
+    "settingsPermissionDelete": "Reset permissions"
   }
 }

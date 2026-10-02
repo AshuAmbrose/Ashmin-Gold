@@ -2,13 +2,26 @@ var pendingPermissions = []
 var grantedPermissions = []
 var nextPermissionId = 1
 
+function getPersistentPermissions () {
+  return settings.get('sitePermissions') || {}
+}
+
+function setPersistentPermission (origin, permission, state) {
+  var sitePermissions = Object.assign({}, settings.get('sitePermissions') || {})
+  if (!sitePermissions[origin]) {
+    sitePermissions[origin] = {}
+  }
+  sitePermissions[origin][permission] = state
+  settings.set('sitePermissions', sitePermissions)
+}
+
 /*
 All permission requests are given to the renderer on each change,
 it will figure out what updates to make
 */
 function sendPermissionsToRenderers () {
-  //send all requests to all windows - the tab bar in each will figure out what to display
-  windows.getAll().forEach(function(win) {
+  // send all requests to all windows - the tab bar in each will figure out what to display
+  windows.getAll().forEach(function (win) {
     sendIPCToWindow(win, 'updatePermissions', pendingPermissions.concat(grantedPermissions).map(p => {
       // remove properties that can't be serialized over IPC
       return {
@@ -24,6 +37,16 @@ function sendPermissionsToRenderers () {
 }
 
 function removePermissionsForContents (contents) {
+  // Reject any pending callbacks for this contents so they don't hang
+  pendingPermissions.filter(perm => perm.contents === contents).forEach(perm => {
+    if (typeof perm.callback === 'function') {
+      try { perm.callback(false) } catch (err) {}
+    }
+    if (typeof perm.displayMediaCallback === 'function') {
+      try { perm.displayMediaCallback({ video: null }) } catch (err) {}
+    }
+  })
+
   pendingPermissions = pendingPermissions.filter(perm => perm.contents !== contents)
   grantedPermissions = grantedPermissions.filter(perm => perm.contents !== contents)
 
@@ -33,7 +56,37 @@ function removePermissionsForContents (contents) {
 /*
 Was permission already granted for this origin?
 */
-function isPermissionGrantedForOrigin (requestOrigin, requestPermission, requestDetails) {
+function isPermissionGrantedForOrigin (requestOrigin, requestPermission, requestDetails, isPersistent = true) {
+  // Check persistent settings if this is a persistent session
+  if (isPersistent) {
+    var sitePermissions = getPersistentPermissions()
+    var originPermissions = sitePermissions[requestOrigin]
+    if (originPermissions) {
+      if (requestPermission === 'notifications' && originPermissions.notifications === 'allow') {
+        return true
+      }
+
+      if (requestPermission === 'pointerLock' && originPermissions.pointerLock === 'allow') {
+        return true
+      }
+
+      if (requestPermission === 'media') {
+        if (requestDetails.mediaType) {
+          if (originPermissions['media:' + requestDetails.mediaType] === 'allow') {
+            return true
+          }
+        } else if (requestDetails.mediaTypes && requestDetails.mediaTypes.length > 0) {
+          if (requestDetails.mediaTypes.every(type => originPermissions['media:' + type] === 'allow')) {
+            return true
+          }
+        } else if (originPermissions['media:audio'] === 'allow' || originPermissions['media:video'] === 'allow') {
+          return true
+        }
+      }
+    }
+  }
+
+  // Also check in-memory granted permissions (for ephemeral private tabs or session-scoped grants)
   for (var i = 0; i < grantedPermissions.length; i++) {
     if (requestOrigin === grantedPermissions[i].origin) {
       if (requestPermission === 'notifications' && grantedPermissions[i].permission === 'notifications') {
@@ -45,23 +98,22 @@ function isPermissionGrantedForOrigin (requestOrigin, requestPermission, request
       }
 
       if (requestPermission === 'media' && grantedPermissions[i].permission === 'media') {
-        // type 1: from permissionCheckHandler
-        // request has a single media type
-        if (requestDetails.mediaType && grantedPermissions[i].details.mediaTypes.includes(requestDetails.mediaType)) {
+        // type 1: single media type
+        if (requestDetails.mediaType && grantedPermissions[i].details.mediaTypes && grantedPermissions[i].details.mediaTypes.includes(requestDetails.mediaType)) {
           return true
         }
-        // type 2: from a permissionRequestHandler
-        // request has multiple media types
-        // TODO existing granted permissions should be merged together (i.e. if there is an existing permission for audio, and another for video, a new request for audio+video should be approved, but it currently won't be)
-        if (requestDetails.mediaTypes && requestDetails.mediaTypes.every(type => grantedPermissions[i].details.mediaTypes.includes(type))) {
+        // type 2: multiple media types
+        if (requestDetails.mediaTypes && grantedPermissions[i].details.mediaTypes && requestDetails.mediaTypes.every(type => grantedPermissions[i].details.mediaTypes.includes(type))) {
           return true
         }
-
-        //type 3: a general media permission with no specific type
-        //occurs immediately after granting a more specific permission type
+        // type 3: general media permission
         if (!requestDetails.mediaType && !requestDetails.mediaTypes && grantedPermissions[i].permission === 'media') {
           return true
         }
+      }
+
+      if (requestPermission === 'display-capture' && grantedPermissions[i].permission === 'display-capture') {
+        return true
       }
     }
   }
@@ -69,8 +121,38 @@ function isPermissionGrantedForOrigin (requestOrigin, requestPermission, request
 }
 
 /*
+Was permission explicitly blocked for this origin?
+*/
+function isPermissionBlockedForOrigin (requestOrigin, requestPermission, requestDetails) {
+  var sitePermissions = getPersistentPermissions()
+  var originPermissions = sitePermissions[requestOrigin]
+  if (!originPermissions) {
+    return false
+  }
+
+  if (requestPermission === 'notifications' && originPermissions.notifications === 'block') {
+    return true
+  }
+
+  if (requestPermission === 'pointerLock' && originPermissions.pointerLock === 'block') {
+    return true
+  }
+
+  if (requestPermission === 'media') {
+    if (requestDetails.mediaType && originPermissions['media:' + requestDetails.mediaType] === 'block') {
+      return true
+    }
+    if (requestDetails.mediaTypes && requestDetails.mediaTypes.some(type => originPermissions['media:' + type] === 'block')) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/*
 Is there already a pending request of the given type for this origin?
- */
+*/
 function hasPendingRequestForOrigin (requestOrigin, permission, details) {
   for (var i = 0; i < pendingPermissions.length; i++) {
     if (requestOrigin === pendingPermissions[i].origin && permission === pendingPermissions[i].permission) {
@@ -86,19 +168,19 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     return
   }
 
-  if (!details.isMainFrame) {
-    // not supported for now to simplify the UI
-    callback(false)
+  if (permission === 'clipboard-sanitized-write') {
+    callback(true)
+    return
+  }
+
+  // Allow display-capture permission check so Electron can invoke setDisplayMediaRequestHandler for source selection
+  if (permission === 'display-capture') {
+    callback(true)
     return
   }
 
   if (!details.requestingUrl) {
     callback(false)
-    return
-  }
-
-  if (permission === 'clipboard-sanitized-write') {
-    callback(true)
     return
   }
 
@@ -112,15 +194,19 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     return
   }
 
+  const isPersistent = webContents && webContents.session ? webContents.session.isPersistent() : true
+
+  // If permission was explicitly blocked by the user, reject immediately
+  if (isPermissionBlockedForOrigin(requestOrigin, permission, details)) {
+    callback(false)
+    return
+  }
+
   /*
-  Geolocation requires a Google API key (https://www.electronjs.org/docs/api/environment-variables#google_api_key), so it is disabled.
-  Other permissions aren't supported for now to simplify the UI
+  Supported permissions: media, notifications, pointerLock
   */
   if (['media', 'notifications', 'pointerLock'].includes(permission)) {
-    /*
-    If permission was previously granted for this origin in a different tab, new requests should be allowed
-    */
-    if (isPermissionGrantedForOrigin(requestOrigin, permission, details)) {
+    if (isPermissionGrantedForOrigin(requestOrigin, permission, details, isPersistent)) {
       callback(true)
 
       if (!grantedPermissions.some(grant => grant.contents === webContents && grant.permission === permission)) {
@@ -138,10 +224,6 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
         nextPermissionId++
       }
     } else if (permission === 'notifications' && hasPendingRequestForOrigin(requestOrigin, permission, details)) {
-      /*
-      Sites sometimes make a new request for each notification, which can generate multiple requests if the first one wasn't approved.
-      TODO this isn't entirely correct (some requests will be rejected when they should be pending) - correct solution is to show a single button to approve all requests in the UI.
-      */
       callback(false)
     } else {
       pendingPermissions.push({
@@ -159,7 +241,7 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     }
 
     /*
-    Once this view is closed or navigated to a new page, these permissions should be revoked
+    Once this view is navigated away or destroyed, clean up any pending requests
     */
     webContents.on('did-start-navigation', function (e, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
       if (isMainFrame && !isInPlace) {
@@ -167,7 +249,6 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
       }
     })
     webContents.once('destroyed', function () {
-      // check whether the app is shutting down to avoid an electron crash (TODO remove this)
       if (windows.getAll().length > 0) {
         removePermissionsForContents(webContents)
       }
@@ -178,49 +259,183 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
 }
 
 function pagePermissionCheckHandler (webContents, permission, requestingOrigin, details) {
-  if (!details.isMainFrame && requestingOrigin !== details.embeddingOrigin) {
+  if (details && details.embeddingOrigin && requestingOrigin && requestingOrigin !== details.embeddingOrigin) {
     return false
   }
 
-  // TODO sometimes the origin field is blank, figure out why
-  if (!requestingOrigin) {
-    return false
-  }
-
-  if (permission === 'clipboard-sanitized-write') {
+  if (permission === 'clipboard-sanitized-write' || permission === 'display-capture') {
     return true
   }
 
   let requestHostname
-  try {
-    requestHostname = new URL(requestingOrigin).hostname
-  } catch (e) {
-    // invalid URL
-    console.warn(e, requestingOrigin)
+  if (requestingOrigin) {
+    try {
+      requestHostname = new URL(requestingOrigin).hostname
+    } catch (e) {
+      console.warn(e, requestingOrigin)
+    }
+  }
+  if (!requestHostname && details && details.securityOrigin) {
+    try {
+      requestHostname = new URL(details.securityOrigin).hostname
+    } catch (e) {}
+  }
+
+  if (!requestHostname) {
     return false
   }
 
-  return isPermissionGrantedForOrigin(requestHostname, permission, details)
+  const isPersistent = webContents && webContents.session ? webContents.session.isPersistent() : true
+
+  if (isPermissionBlockedForOrigin(requestHostname, permission, details || {})) {
+    return false
+  }
+
+  return isPermissionGrantedForOrigin(requestHostname, permission, details || {}, isPersistent)
+}
+
+function displayMediaRequestHandler (request, callback) {
+  let requestOrigin = 'Site'
+  if (request.securityOrigin) {
+    try {
+      requestOrigin = new URL(request.securityOrigin).hostname
+    } catch (e) {
+      requestOrigin = request.securityOrigin
+    }
+  }
+
+  const contents = request.frame ? request.frame.webContents : null
+  const tabId = contents ? getTabIDFromWebContents(contents) : null
+
+  electron.desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } }).then(sources => {
+    if (!sources || sources.length === 0) {
+      callback({ video: null })
+      return
+    }
+
+    const permissionId = nextPermissionId++
+
+    const serializedSources = sources.map(s => ({
+      id: s.id,
+      name: s.name
+    }))
+
+    pendingPermissions.push({
+      permissionId: permissionId,
+      tabId: tabId,
+      contents: contents,
+      origin: requestOrigin,
+      permission: 'display-capture',
+      details: {
+        sources: serializedSources,
+        videoRequested: request.videoRequested,
+        audioRequested: request.audioRequested
+      },
+      displayMediaCallback: callback,
+      availableSources: sources
+    })
+
+    sendPermissionsToRenderers()
+  }).catch(err => {
+    console.error('Error fetching display capture sources:', err)
+    callback({ video: null })
+  })
 }
 
 app.once('ready', function () {
   session.defaultSession.setPermissionRequestHandler(pagePermissionRequestHandler)
   session.defaultSession.setPermissionCheckHandler(pagePermissionCheckHandler)
+  session.defaultSession.setDisplayMediaRequestHandler(displayMediaRequestHandler)
 })
 
 app.on('session-created', function (session) {
   session.setPermissionRequestHandler(pagePermissionRequestHandler)
   session.setPermissionCheckHandler(pagePermissionCheckHandler)
+  session.setDisplayMediaRequestHandler(displayMediaRequestHandler)
 })
 
-ipc.on('permissionGranted', function (e, permissionId) {
+ipc.on('permissionGranted', function (e, permissionData) {
+  const permissionId = (typeof permissionData === 'object' && permissionData !== null) ? permissionData.permissionId : permissionData
+  const chosenSourceId = (typeof permissionData === 'object' && permissionData !== null) ? permissionData.sourceId : null
+  const shouldPersist = (typeof permissionData === 'object' && permissionData !== null && permissionData.persist !== undefined) ? !!permissionData.persist : true
+
   for (var i = 0; i < pendingPermissions.length; i++) {
     if (permissionId && pendingPermissions[i].permissionId === permissionId) {
-      pendingPermissions[i].granted = true
-      pendingPermissions[i].callback(true)
-      grantedPermissions.push(pendingPermissions[i])
+      var perm = pendingPermissions[i]
+
+      if (perm.permission === 'display-capture') {
+        if (perm.displayMediaCallback) {
+          var chosenSource = perm.availableSources ? perm.availableSources.find(s => s.id === chosenSourceId) || perm.availableSources[0] : null
+          if (chosenSource) {
+            perm.displayMediaCallback({ video: chosenSource, audio: 'loopback' })
+          } else {
+            perm.displayMediaCallback({ video: null })
+          }
+        }
+      } else {
+        if (perm.callback) {
+          perm.callback(true)
+        }
+
+        // Persist permission if requested and session is persistent
+        const isPersistent = shouldPersist && perm.contents && perm.contents.session ? perm.contents.session.isPersistent() : false
+        if (isPersistent && perm.origin) {
+          if (perm.permission === 'notifications') {
+            setPersistentPermission(perm.origin, 'notifications', 'allow')
+          } else if (perm.permission === 'pointerLock') {
+            setPersistentPermission(perm.origin, 'pointerLock', 'allow')
+          } else if (perm.permission === 'media') {
+            var types = (perm.details && perm.details.mediaTypes) || (perm.details && perm.details.mediaType ? [perm.details.mediaType] : ['audio', 'video'])
+            types.forEach(t => {
+              setPersistentPermission(perm.origin, 'media:' + t, 'allow')
+            })
+          }
+        }
+      }
+
+      perm.granted = true
+      grantedPermissions.push(perm)
       pendingPermissions.splice(i, 1)
 
+      sendPermissionsToRenderers()
+      break
+    }
+  }
+})
+
+ipc.on('permissionDenied', function (e, permissionData) {
+  const permissionId = (typeof permissionData === 'object' && permissionData !== null) ? permissionData.permissionId : permissionData
+  const shouldBlock = (typeof permissionData === 'object' && permissionData !== null) ? !!permissionData.block : false
+
+  for (var i = 0; i < pendingPermissions.length; i++) {
+    if (permissionId && pendingPermissions[i].permissionId === permissionId) {
+      var perm = pendingPermissions[i]
+
+      if (perm.permission === 'display-capture') {
+        if (perm.displayMediaCallback) {
+          perm.displayMediaCallback({ video: null })
+        }
+      } else {
+        if (perm.callback) {
+          perm.callback(false)
+        }
+
+        const isPersistent = perm.contents && perm.contents.session ? perm.contents.session.isPersistent() : true
+        if (shouldBlock && isPersistent && perm.origin) {
+          if (perm.permission === 'notifications') {
+            setPersistentPermission(perm.origin, 'notifications', 'block')
+          } else if (perm.permission === 'pointerLock') {
+            setPersistentPermission(perm.origin, 'pointerLock', 'block')
+          } else if (perm.permission === 'media') {
+            var types = (perm.details && perm.details.mediaTypes) || (perm.details && perm.details.mediaType ? [perm.details.mediaType] : ['audio', 'video'])
+            types.forEach(t => {
+              setPersistentPermission(perm.origin, 'media:' + t, 'block')
+            })
+          }
+        }
+      }
+
+      pendingPermissions.splice(i, 1)
       sendPermissionsToRenderers()
       break
     }

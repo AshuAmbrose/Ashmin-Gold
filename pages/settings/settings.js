@@ -676,3 +676,161 @@ function createBang (bang, snippet, redirect) {
 
   return li
 }
+
+/* site permissions */
+
+var sitePermissionsEmpty = document.getElementById('site-permissions-empty')
+var sitePermissionsList = document.getElementById('site-permissions-list')
+
+function getPermissionLabel (permKey) {
+  if (permKey === 'notifications') {
+    return l('settingsPermissionNotifications') || 'Notifications'
+  }
+  if (permKey === 'media:audio') {
+    return l('settingsPermissionMicrophone') || 'Microphone'
+  }
+  if (permKey === 'media:video') {
+    return l('settingsPermissionCamera') || 'Camera'
+  }
+  if (permKey === 'pointerLock') {
+    return l('settingsPermissionPointerLock') || 'Pointer Lock'
+  }
+  return permKey
+}
+
+function renderSitePermissions (permissionsData) {
+  if (!sitePermissionsList) {
+    return
+  }
+
+  while (sitePermissionsList.firstChild) {
+    sitePermissionsList.removeChild(sitePermissionsList.firstChild)
+  }
+
+  var sitePermissions = permissionsData || {}
+  var origins = Object.keys(sitePermissions).filter(origin => {
+    return Object.keys(sitePermissions[origin] || {}).length > 0
+  }).sort()
+
+  if (origins.length === 0) {
+    if (sitePermissionsEmpty) {
+      sitePermissionsEmpty.hidden = false
+    }
+    return
+  }
+
+  if (sitePermissionsEmpty) {
+    sitePermissionsEmpty.hidden = true
+  }
+
+  origins.forEach(function (origin) {
+    var perms = sitePermissions[origin]
+    var permKeys = Object.keys(perms)
+
+    var item = document.createElement('div')
+    item.className = 'site-permission-item'
+
+    var originTitle = document.createElement('div')
+    originTitle.className = 'site-permission-origin'
+    originTitle.textContent = origin
+
+    var entriesContainer = document.createElement('div')
+    entriesContainer.className = 'site-permission-entries'
+
+    permKeys.forEach(function (key) {
+      var entry = document.createElement('div')
+      entry.className = 'site-permission-entry'
+
+      var label = document.createElement('span')
+      label.className = 'site-permission-type'
+      label.textContent = getPermissionLabel(key)
+
+      var select = document.createElement('select')
+      select.className = 'site-permission-state'
+
+      var allowOpt = document.createElement('option')
+      allowOpt.value = 'allow'
+      allowOpt.textContent = l('settingsPermissionAllow') || 'Allowed'
+      if (perms[key] === 'allow') {
+        allowOpt.selected = true
+      }
+
+      var blockOpt = document.createElement('option')
+      blockOpt.value = 'block'
+      blockOpt.textContent = l('settingsPermissionBlock') || 'Blocked'
+      if (perms[key] === 'block') {
+        blockOpt.selected = true
+      }
+
+      var askOpt = document.createElement('option')
+      askOpt.value = 'ask'
+      askOpt.textContent = l('settingsPermissionAsk') || 'Ask (default)'
+
+      select.appendChild(allowOpt)
+      select.appendChild(blockOpt)
+      select.appendChild(askOpt)
+
+      select.addEventListener('change', function () {
+        settings.get('sitePermissions', function (current) {
+          var updated = Object.assign({}, current || {})
+          if (select.value === 'ask') {
+            if (updated[origin]) {
+              delete updated[origin][key]
+              if (Object.keys(updated[origin]).length === 0) {
+                delete updated[origin]
+                item.remove()
+              } else {
+                entry.remove()
+              }
+            }
+          } else {
+            if (!updated[origin]) {
+              updated[origin] = {}
+            }
+            updated[origin][key] = select.value
+          }
+          settings.set('sitePermissions', updated)
+
+          var remaining = Object.keys(updated).filter(k => Object.keys(updated[k] || {}).length > 0)
+          if (remaining.length === 0 && sitePermissionsEmpty) {
+            sitePermissionsEmpty.hidden = false
+          }
+        })
+      })
+
+      entry.appendChild(label)
+      entry.appendChild(select)
+      entriesContainer.appendChild(entry)
+    })
+
+    var deleteBtn = document.createElement('button')
+    deleteBtn.className = 'i carbon:trash-can site-permission-delete-button'
+    deleteBtn.title = l('settingsPermissionDelete') || 'Reset permissions'
+    deleteBtn.addEventListener('click', function () {
+      settings.get('sitePermissions', function (current) {
+        var updated = Object.assign({}, current || {})
+        delete updated[origin]
+        settings.set('sitePermissions', updated)
+        item.remove()
+
+        var remaining = Object.keys(updated).filter(k => Object.keys(updated[k] || {}).length > 0)
+        if (remaining.length === 0 && sitePermissionsEmpty) {
+          sitePermissionsEmpty.hidden = false
+        }
+      })
+    })
+
+    item.appendChild(originTitle)
+    item.appendChild(entriesContainer)
+    item.appendChild(deleteBtn)
+    sitePermissionsList.appendChild(item)
+  })
+}
+
+settings.get('sitePermissions', function (sitePermissions) {
+  renderSitePermissions(sitePermissions)
+})
+
+settings.listen('sitePermissions', function (sitePermissions) {
+  renderSitePermissions(sitePermissions)
+})

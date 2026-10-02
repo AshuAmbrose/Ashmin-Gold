@@ -1,0 +1,122 @@
+#permission-request-bar {
+  position: absolute;
+  top: calc(36px + var(--control-space-top));
+  left: 0;
+  padding: 0.4em 1.25em;
+  width: 100%;
+  border-bottom: 1px rgba(0, 0, 0, 0.12) solid;
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  z-index: 5;
+  background: #f8f9fa;
+  color: #212529;
+  font-size: 14px;
+  line-height: 2em;
+}
+
+.dark-mode #permission-request-bar {
+  background: rgb(41, 44, 52);
+  color: #e9ecef;
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+#permission-request-icon {
+  font-size: 1.1em;
+  flex-shrink: 0;
+}
+
+#permission-request-text {
+  flex: 1;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#permission-request-source-select {
+  padding: 0.25em 0.5em;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: #fff;
+  color: inherit;
+  max-width: 280px;
+}
+
+.dark-mode #permission-request-source-select {
+  background: rgb(33, 37, 43);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.permission-request-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-shrink: 0;
+}
+
+#permission-request-allow {
+  background: royalblue;
+  color: white;
+  padding: 0.25em 1.25em;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#permission-request-allow:hover {
+  background: rgb(72, 117, 252);
+}
+
+#permission-request-allow-once {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 0.25em 1em;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#permission-request-allow-once:hover {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.dark-mode #permission-request-allow-once {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark-mode #permission-request-allow-once:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+#permission-request-block {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 0.25em 1em;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#permission-request-block:hover {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.dark-mode #permission-request-block {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark-mode #permission-request-block:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+#permission-request-close {
+  padding: 0.25em;
+  font-size: 1.1em;
+  opacity: 0.6;
+  cursor: pointer;
+  margin-left: 0.25em;
+}
+
+#permission-request-close:hover {
+  opacity: 1;
+}
