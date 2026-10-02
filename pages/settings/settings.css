@@ -187,3 +187,88 @@ html {
   vertical-align: middle;
   margin-bottom: 0.2em;
 }
+
+/* Site permissions management */
+
+#site-permissions-section {
+  margin-top: 1.5em;
+}
+
+#site-permissions-container {
+  margin-top: 0.5em;
+}
+
+#site-permissions-empty {
+  font-size: 0.9em;
+  opacity: 0.65;
+  margin-bottom: 0.5em;
+}
+
+#site-permissions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  max-width: 650px;
+}
+
+.site-permission-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6em 0.8em;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.02);
+  font-size: 14px;
+}
+
+.dark-mode .site-permission-item {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.site-permission-origin {
+  font-weight: 500;
+  min-width: 140px;
+  word-break: break-word;
+}
+
+.site-permission-entries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75em;
+  align-items: center;
+  flex: 1;
+  margin: 0 1em;
+}
+
+.site-permission-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 13px;
+}
+
+.site-permission-type {
+  opacity: 0.8;
+  font-size: 12.5px;
+}
+
+.site-permission-state {
+  font-size: 12.5px;
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  min-width: 90px !important;
+}
+
+.site-permission-delete-button {
+  font-size: 1.15em !important;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0.25em;
+  border-radius: 3px;
+}
+
+.site-permission-delete-button:hover {
+  opacity: 1;
+}

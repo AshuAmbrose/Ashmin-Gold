@@ -9,14 +9,15 @@ const permissionRequests = {
   textEl: null,
   sourceSelect: null,
   allowBtn: null,
+  allowOnceBtn: null,
   blockBtn: null,
   closeBtn: null,
   isPromptVisible: false,
   activePromptPermissionId: null,
   promptBarHeight: 0,
 
-  grantPermission: function (permissionId, sourceId) {
-    ipcRenderer.send('permissionGranted', { permissionId, sourceId })
+  grantPermission: function (permissionId, sourceId, persist = true) {
+    ipcRenderer.send('permissionGranted', { permissionId, sourceId, persist: persist !== false })
   },
 
   denyPermission: function (permissionId, block) {
@@ -93,8 +94,15 @@ const permissionRequests = {
 
     // Set text
     var origin = request.origin || 'This site'
-    var allowText = (typeof l === 'function' ? l('permissionActionAllow') : null) || 'Allow'
+    var allowText = (typeof l === 'function' ? l('permissionActionAllowAlways') : null) || 'Always allow'
+    var allowOnceText = (typeof l === 'function' ? l('permissionActionAllowOnce') : null) || 'Allow this visit'
     var blockText = (typeof l === 'function' ? l('permissionActionBlock') : null) || 'Block'
+
+    // Show allow-once button by default for standard permissions
+    if (permissionRequests.allowOnceBtn) {
+      permissionRequests.allowOnceBtn.textContent = allowOnceText
+      permissionRequests.allowOnceBtn.hidden = false
+    }
 
     if (request.permission === 'notifications') {
       var template = (typeof l === 'function' ? l('permissionNotifications') : null) || '%s wants to show notifications'
@@ -119,6 +127,9 @@ const permissionRequests = {
       var template = (typeof l === 'function' ? l('permissionDisplayCapture') : null) || '%s wants to share your screen or a window'
       permissionRequests.textEl.textContent = template.replace('%s', origin)
       allowText = (typeof l === 'function' ? l('permissionActionShare') : null) || 'Share'
+      if (permissionRequests.allowOnceBtn) {
+        permissionRequests.allowOnceBtn.hidden = true
+      }
 
       // Populate source picker dropdown
       empty(permissionRequests.sourceSelect)
@@ -138,12 +149,15 @@ const permissionRequests = {
       permissionRequests.textEl.textContent = template.replace('%s', origin)
       permissionRequests.sourceSelect.hidden = true
     } else {
-      permissionRequests.textEl.textContent = origin + ' requests ' + request.permission
+      permissionRequests.textEl.textContent = origin + ' requests permission: ' + request.permission
       permissionRequests.sourceSelect.hidden = true
     }
 
     permissionRequests.allowBtn.textContent = allowText
     permissionRequests.blockBtn.textContent = blockText
+    if (permissionRequests.closeBtn) {
+      permissionRequests.closeBtn.title = (typeof l === 'function' ? l('permissionActionDismiss') : null) || 'Dismiss'
+    }
 
     if (!permissionRequests.isPromptVisible) {
       permissionRequests.bar.hidden = false
@@ -188,6 +202,7 @@ const permissionRequests = {
     permissionRequests.textEl = document.getElementById('permission-request-text')
     permissionRequests.sourceSelect = document.getElementById('permission-request-source-select')
     permissionRequests.allowBtn = document.getElementById('permission-request-allow')
+    permissionRequests.allowOnceBtn = document.getElementById('permission-request-allow-once')
     permissionRequests.blockBtn = document.getElementById('permission-request-block')
     permissionRequests.closeBtn = document.getElementById('permission-request-close')
 
@@ -195,7 +210,17 @@ const permissionRequests = {
       permissionRequests.allowBtn.addEventListener('click', function () {
         if (permissionRequests.activePromptPermissionId) {
           var sourceId = !permissionRequests.sourceSelect.hidden ? permissionRequests.sourceSelect.value : null
-          permissionRequests.grantPermission(permissionRequests.activePromptPermissionId, sourceId)
+          permissionRequests.grantPermission(permissionRequests.activePromptPermissionId, sourceId, true)
+          permissionRequests.hidePrompt()
+        }
+      })
+    }
+
+    if (permissionRequests.allowOnceBtn) {
+      permissionRequests.allowOnceBtn.addEventListener('click', function () {
+        if (permissionRequests.activePromptPermissionId) {
+          var sourceId = !permissionRequests.sourceSelect.hidden ? permissionRequests.sourceSelect.value : null
+          permissionRequests.grantPermission(permissionRequests.activePromptPermissionId, sourceId, false)
           permissionRequests.hidePrompt()
         }
       })

@@ -323,8 +323,21 @@
     "permissionDisplayCapture": "%s wants to share your screen or a window",
     "permissionPointerLock": "%s wants to lock your mouse cursor",
     "permissionActionAllow": "Allow",
+    "permissionActionAllowAlways": "Always allow",
+    "permissionActionAllowOnce": "Allow this visit",
     "permissionActionShare": "Share",
     "permissionActionBlock": "Block",
-    "permissionActionDismiss": "Dismiss"
+    "permissionActionDismiss": "Dismiss",
+    /* Site permissions settings */
+    "settingsSitePermissionsHeading": "Site Permissions",
+    "settingsSitePermissionsEmpty": "No site permissions have been configured yet.",
+    "settingsPermissionNotifications": "Notifications",
+    "settingsPermissionMicrophone": "Microphone",
+    "settingsPermissionCamera": "Camera",
+    "settingsPermissionPointerLock": "Pointer Lock",
+    "settingsPermissionAllow": "Allowed",
+    "settingsPermissionBlock": "Blocked",
+    "settingsPermissionAsk": "Ask (default)",
+    "settingsPermissionDelete": "Reset permissions"
   }
 }

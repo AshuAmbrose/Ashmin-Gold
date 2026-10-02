@@ -69,6 +69,26 @@
   background: rgb(72, 117, 252);
 }
 
+#permission-request-allow-once {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 0.25em 1em;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#permission-request-allow-once:hover {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.dark-mode #permission-request-allow-once {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark-mode #permission-request-allow-once:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 #permission-request-block {
   background: rgba(0, 0, 0, 0.08);
   padding: 0.25em 1em;

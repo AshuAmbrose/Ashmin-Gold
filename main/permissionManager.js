@@ -357,6 +357,7 @@ app.on('session-created', function (session) {
 ipc.on('permissionGranted', function (e, permissionData) {
   const permissionId = (typeof permissionData === 'object' && permissionData !== null) ? permissionData.permissionId : permissionData
   const chosenSourceId = (typeof permissionData === 'object' && permissionData !== null) ? permissionData.sourceId : null
+  const shouldPersist = (typeof permissionData === 'object' && permissionData !== null && permissionData.persist !== undefined) ? !!permissionData.persist : true
 
   for (var i = 0; i < pendingPermissions.length; i++) {
     if (permissionId && pendingPermissions[i].permissionId === permissionId) {
@@ -376,8 +377,8 @@ ipc.on('permissionGranted', function (e, permissionData) {
           perm.callback(true)
         }
 
-        // Persist permission for persistent sessions
-        const isPersistent = perm.contents && perm.contents.session ? perm.contents.session.isPersistent() : true
+        // Persist permission if requested and session is persistent
+        const isPersistent = shouldPersist && perm.contents && perm.contents.session ? perm.contents.session.isPersistent() : false
         if (isPersistent && perm.origin) {
           if (perm.permission === 'notifications') {
             setPersistentPermission(perm.origin, 'notifications', 'allow')
