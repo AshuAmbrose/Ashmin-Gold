@@ -202,6 +202,11 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     return
   }
 
+  if (permission === 'display-capture') {
+    callback(true)
+    return
+  }
+
   /*
   Supported permissions: media, notifications, pointerLock
   */
@@ -304,8 +309,25 @@ function displayMediaRequestHandler (request, callback) {
     }
   }
 
-  const contents = request.frame ? request.frame.webContents : null
-  const tabId = contents ? getTabIDFromWebContents(contents) : null
+  let contents = null
+  if (request.frame && typeof webContents.fromFrame === 'function') {
+    contents = webContents.fromFrame(request.frame)
+  }
+  let tabId = contents ? getTabIDFromWebContents(contents) : null
+
+  // Fallback: If frame couldn't be resolved directly, find active tab in focused window
+  if (!tabId) {
+    const focusedWin = windows.getFocused() || windows.getAll()[0]
+    if (focusedWin) {
+      const winState = windows.getState(focusedWin)
+      if (winState && winState.selectedView) {
+        tabId = winState.selectedView
+        if (!contents && viewMap[tabId]) {
+          contents = viewMap[tabId].webContents
+        }
+      }
+    }
+  }
 
   electron.desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } }).then(sources => {
     if (!sources || sources.length === 0) {
@@ -332,7 +354,8 @@ function displayMediaRequestHandler (request, callback) {
         audioRequested: request.audioRequested
       },
       displayMediaCallback: callback,
-      availableSources: sources
+      availableSources: sources,
+      audioRequested: request.audioRequested
     })
 
     sendPermissionsToRenderers()
@@ -367,7 +390,11 @@ ipc.on('permissionGranted', function (e, permissionData) {
         if (perm.displayMediaCallback) {
           var chosenSource = perm.availableSources ? perm.availableSources.find(s => s.id === chosenSourceId) || perm.availableSources[0] : null
           if (chosenSource) {
-            perm.displayMediaCallback({ video: chosenSource, audio: 'loopback' })
+            const streamConfig = { video: chosenSource }
+            if (perm.audioRequested && process.platform === 'win32') {
+              streamConfig.audio = 'loopback'
+            }
+            perm.displayMediaCallback(streamConfig)
           } else {
             perm.displayMediaCallback({ video: null })
           }

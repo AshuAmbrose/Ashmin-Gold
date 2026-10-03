@@ -50,7 +50,7 @@ const permissionRequests = {
         return
       }
 
-      if (request.tabId === tabId) {
+      if (request.tabId === tabId || !request.tabId) {
         var button = document.createElement('button')
         button.className = 'tab-icon permission-request-icon'
         if (request.granted) {
@@ -182,7 +182,7 @@ const permissionRequests = {
     }
     var selectedTabId = tabs.getSelected()
     var pendingForTab = permissionRequests.requests.find(function (r) {
-      return !r.granted && r.tabId === selectedTabId
+      return !r.granted && (r.tabId === selectedTabId || !r.tabId)
     })
 
     if (pendingForTab) {
