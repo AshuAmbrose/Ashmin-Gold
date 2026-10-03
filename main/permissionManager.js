@@ -1,6 +1,101 @@
 var pendingPermissions = []
 var grantedPermissions = []
+var sessionPermissions = []
+var activeMediaByContents = new Map()
 var nextPermissionId = 1
+
+function updateActiveMediaPermissions (contents, kind, isActive) {
+  if (!contents || contents.isDestroyed()) {
+    return
+  }
+
+  let record = activeMediaByContents.get(contents)
+  if (!record) {
+    if (!isActive) {
+      return
+    }
+    let tabId = getTabIDFromWebContents(contents)
+    let origin = ''
+    try {
+      origin = new URL(contents.getURL()).hostname
+    } catch (e) {}
+    record = {
+      tabId: tabId,
+      origin: origin,
+      audio: 0,
+      video: 0,
+      screen: 0
+    }
+    activeMediaByContents.set(contents, record)
+  }
+
+  if (isActive) {
+    record[kind] = (record[kind] || 0) + 1
+  } else {
+    record[kind] = Math.max(0, (record[kind] || 0) - 1)
+  }
+
+  const currentTabId = getTabIDFromWebContents(contents)
+  if (currentTabId) {
+    record.tabId = currentTabId
+  }
+  if (!record.origin) {
+    try {
+      record.origin = new URL(contents.getURL()).hostname
+    } catch (e) {}
+  }
+
+  // Rebuild grantedPermissions for this contents to only reflect currently active media capture
+  grantedPermissions = grantedPermissions.filter(p => p.contents !== contents)
+
+  if (record.audio > 0) {
+    grantedPermissions.push({
+      permissionId: nextPermissionId++,
+      tabId: record.tabId,
+      contents: contents,
+      origin: record.origin,
+      permission: 'media',
+      details: { mediaTypes: ['audio'] },
+      granted: true
+    })
+  }
+
+  if (record.video > 0) {
+    grantedPermissions.push({
+      permissionId: nextPermissionId++,
+      tabId: record.tabId,
+      contents: contents,
+      origin: record.origin,
+      permission: 'media',
+      details: { mediaTypes: ['video'] },
+      granted: true
+    })
+  }
+
+  if (record.screen > 0) {
+    grantedPermissions.push({
+      permissionId: nextPermissionId++,
+      tabId: record.tabId,
+      contents: contents,
+      origin: record.origin,
+      permission: 'display-capture',
+      details: {},
+      granted: true
+    })
+  }
+
+  if (record.audio === 0 && record.video === 0 && record.screen === 0) {
+    activeMediaByContents.delete(contents)
+  }
+
+  sendPermissionsToRenderers()
+}
+
+ipc.on('media-access-status', function (e, data) {
+  if (data && typeof data.kind === 'string' && typeof data.active === 'boolean') {
+    updateActiveMediaPermissions(e.sender, data.kind, data.active)
+  }
+})
 
 function getPersistentPermissions () {
   return settings.get('sitePermissions') || {}
@@ -49,6 +144,7 @@ function removePermissionsForContents (contents) {
 
   pendingPermissions = pendingPermissions.filter(perm => perm.contents !== contents)
   grantedPermissions = grantedPermissions.filter(perm => perm.contents !== contents)
+  activeMediaByContents.delete(contents)
 
   sendPermissionsToRenderers()
 }
@@ -86,33 +182,33 @@ function isPermissionGrantedForOrigin (requestOrigin, requestPermission, request
     }
   }
 
-  // Also check in-memory granted permissions (for ephemeral private tabs or session-scoped grants)
-  for (var i = 0; i < grantedPermissions.length; i++) {
-    if (requestOrigin === grantedPermissions[i].origin) {
-      if (requestPermission === 'notifications' && grantedPermissions[i].permission === 'notifications') {
+  // Also check session-scoped permissions (for ephemeral private tabs or session grants)
+  for (var i = 0; i < sessionPermissions.length; i++) {
+    if (requestOrigin === sessionPermissions[i].origin) {
+      if (requestPermission === 'notifications' && sessionPermissions[i].permission === 'notifications') {
         return true
       }
 
-      if (requestPermission === 'pointerLock' && grantedPermissions[i].permission === 'pointerLock') {
+      if (requestPermission === 'pointerLock' && sessionPermissions[i].permission === 'pointerLock') {
         return true
       }
 
-      if (requestPermission === 'media' && grantedPermissions[i].permission === 'media') {
+      if (requestPermission === 'media' && sessionPermissions[i].permission === 'media') {
         // type 1: single media type
-        if (requestDetails.mediaType && grantedPermissions[i].details.mediaTypes && grantedPermissions[i].details.mediaTypes.includes(requestDetails.mediaType)) {
+        if (requestDetails.mediaType && sessionPermissions[i].details.mediaTypes && sessionPermissions[i].details.mediaTypes.includes(requestDetails.mediaType)) {
           return true
         }
         // type 2: multiple media types
-        if (requestDetails.mediaTypes && grantedPermissions[i].details.mediaTypes && requestDetails.mediaTypes.every(type => grantedPermissions[i].details.mediaTypes.includes(type))) {
+        if (requestDetails.mediaTypes && sessionPermissions[i].details.mediaTypes && requestDetails.mediaTypes.every(type => sessionPermissions[i].details.mediaTypes.includes(type))) {
           return true
         }
         // type 3: general media permission
-        if (!requestDetails.mediaType && !requestDetails.mediaTypes && grantedPermissions[i].permission === 'media') {
+        if (!requestDetails.mediaType && !requestDetails.mediaTypes && sessionPermissions[i].permission === 'media') {
           return true
         }
       }
 
-      if (requestPermission === 'display-capture' && grantedPermissions[i].permission === 'display-capture') {
+      if (requestPermission === 'display-capture' && sessionPermissions[i].permission === 'display-capture') {
         return true
       }
     }
@@ -213,21 +309,6 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
   if (['media', 'notifications', 'pointerLock'].includes(permission)) {
     if (isPermissionGrantedForOrigin(requestOrigin, permission, details, isPersistent)) {
       callback(true)
-
-      if (!grantedPermissions.some(grant => grant.contents === webContents && grant.permission === permission)) {
-        grantedPermissions.push({
-          permissionId: nextPermissionId,
-          tabId: getTabIDFromWebContents(webContents),
-          contents: webContents,
-          origin: requestOrigin,
-          permission: permission,
-          details: details,
-          granted: true
-        })
-
-        sendPermissionsToRenderers()
-        nextPermissionId++
-      }
     } else if (permission === 'notifications' && hasPendingRequestForOrigin(requestOrigin, permission, details)) {
       callback(false)
     } else {
@@ -420,8 +501,11 @@ ipc.on('permissionGranted', function (e, permissionData) {
         }
       }
 
-      perm.granted = true
-      grantedPermissions.push(perm)
+      sessionPermissions.push({
+        origin: perm.origin,
+        permission: perm.permission,
+        details: perm.details
+      })
       pendingPermissions.splice(i, 1)
 
       sendPermissionsToRenderers()
@@ -460,6 +544,10 @@ ipc.on('permissionDenied', function (e, permissionData) {
             })
           }
         }
+      }
+
+      if (shouldBlock && perm.origin) {
+        sessionPermissions = sessionPermissions.filter(p => p.origin !== perm.origin || p.permission !== perm.permission)
       }
 
       pendingPermissions.splice(i, 1)

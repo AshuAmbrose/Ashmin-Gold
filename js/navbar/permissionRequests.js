@@ -44,6 +44,10 @@ const permissionRequests = {
   getButtons: function (tabId) {
     var buttons = []
     permissionRequests.requests.forEach(function (request) {
+      if (request.granted && (request.permission === 'notifications' || request.permission === 'pointerLock')) {
+        return
+      }
+
       const icons = permissionRequests.getIcons(request)
       // don't display buttons for unsupported permission types
       if (icons.length === 0) {
